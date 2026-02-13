@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Sparkles, MessageCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import ChatBubble from "@/components/ChatBubble";
 import ChatInput from "@/components/ChatInput";
 import TypingIndicator from "@/components/TypingIndicator";
@@ -74,7 +75,7 @@ export default function Index() {
   return (
     <div className="flex flex-col h-dvh bg-background">
       {/* Header */}
-      <header className="glass sticky top-0 z-10 px-4 py-3 flex items-center justify-center border-b border-border/50">
+      <header className="glass sticky top-0 z-10 px-4 py-3 flex items-center justify-between border-b border-border/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-primary-foreground" />
@@ -83,6 +84,13 @@ export default function Index() {
             Suhu AI
           </h1>
         </div>
+        <Link
+          to="/chatroom"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          Chatroom
+        </Link>
       </header>
 
       {/* Messages */}
