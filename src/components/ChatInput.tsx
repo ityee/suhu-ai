@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
+import EmojiPicker from "@/components/EmojiPicker";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -38,6 +39,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
   return (
     <div className="px-4 pb-4 pt-2">
       <div className="glass rounded-2xl shadow-elevated flex items-end gap-2 p-2 max-w-2xl mx-auto">
+        <EmojiPicker onSelect={(emoji) => setValue((v) => v + emoji)} />
         <textarea
           ref={textareaRef}
           value={value}

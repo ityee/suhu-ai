@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, MessageCircle } from "lucide-react";
 import { Link } from "react-router-dom";
+import ThemeToggle from "@/components/ThemeToggle";
 import ChatBubble from "@/components/ChatBubble";
 import ChatInput from "@/components/ChatInput";
 import TypingIndicator from "@/components/TypingIndicator";
@@ -84,13 +85,16 @@ export default function Index() {
             Suhu AI
           </h1>
         </div>
-        <Link
-          to="/chatroom"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
-        >
-          <MessageCircle className="w-3.5 h-3.5" />
-          Chatroom
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/chatroom"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            Chatroom
+          </Link>
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Messages */}
