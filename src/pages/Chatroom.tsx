@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { MessageCircle, Send, Users, Clock, Sparkles, LogOut } from "lucide-react";
+import { MessageCircle, Send, Users, Clock, Sparkles, LogOut, Lock } from "lucide-react";
+import ThemeToggle from "@/components/ThemeToggle";
+import EmojiPicker from "@/components/EmojiPicker";
 import { supabase } from "@/integrations/supabase/client";
 import { streamChat } from "@/lib/streamChat";
+import { encryptMessage, decryptMessage } from "@/lib/crypto";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
@@ -14,27 +17,37 @@ interface ChatMessage {
   created_at: string;
 }
 
-function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
+interface DecryptedMessage extends ChatMessage {
+  decryptedContent?: string;
+}
+
+function UsernameGate({ onJoin }: { onJoin: (name: string, passphrase: string) => void }) {
   const [name, setName] = useState("");
+  const [passphrase, setPassphrase] = useState("");
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
 
   const handleJoin = async () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    if (trimmed.toLowerCase() === "suhu") {
-      setError("'Suhu' is reserved for the AI!");
+    const pass = passphrase.trim();
+    if (!trimmed || !pass) return;
+    if (["suhu", "shuvangi"].includes(trimmed.toLowerCase())) {
+      setError("This username is reserved for the Queen 🌸");
+      setTimeout(() => setError(""), 10000);
       return;
     }
     if (trimmed.length < 2 || trimmed.length > 20) {
       setError("Username must be 2-20 characters");
       return;
     }
+    if (pass.length < 4) {
+      setError("Passphrase must be at least 4 characters");
+      return;
+    }
 
     setChecking(true);
     setError("");
 
-    // Check if username is taken
     const { data: existing } = await supabase
       .from("active_usernames")
       .select("id")
@@ -47,7 +60,6 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
       return;
     }
 
-    // Claim username
     const { error: insertErr } = await supabase
       .from("active_usernames")
       .insert({ username: trimmed });
@@ -58,7 +70,7 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
       return;
     }
 
-    onJoin(trimmed);
+    onJoin(trimmed, pass);
   };
 
   return (
@@ -74,20 +86,29 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-1">Chatroom</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Pick a username to join the conversation
+          Pick a username & passphrase to join
         </p>
 
         <input
           value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setError("");
-          }}
+          onChange={(e) => { setName(e.target.value); setError(""); }}
           onKeyDown={(e) => e.key === "Enter" && handleJoin()}
           placeholder="Enter a username..."
           maxLength={20}
           className="w-full px-4 py-3 rounded-2xl bg-muted text-foreground placeholder:text-muted-foreground/60 text-[15px] outline-none border border-border/50 focus:border-primary transition-colors mb-2"
         />
+        <div className="relative mb-2">
+          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="password"
+            value={passphrase}
+            onChange={(e) => { setPassphrase(e.target.value); setError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+            placeholder="Encryption passphrase..."
+            className="w-full pl-10 pr-4 py-3 rounded-2xl bg-muted text-foreground placeholder:text-muted-foreground/60 text-[15px] outline-none border border-border/50 focus:border-primary transition-colors"
+          />
+        </div>
+
         {error && (
           <motion.p
             initial={{ opacity: 0, y: -5 }}
@@ -100,15 +121,16 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleJoin}
-          disabled={!name.trim() || checking}
+          disabled={!name.trim() || !passphrase.trim() || checking}
           className="w-full mt-2 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-[15px] disabled:opacity-50 transition-opacity"
         >
           {checking ? "Joining..." : "Join Chat"}
         </motion.button>
 
-        <p className="text-xs text-muted-foreground mt-4">
-          💡 Type <span className="font-mono text-primary">@suhu</span> followed by a question to ask the AI
-        </p>
+        <div className="flex items-center gap-1.5 justify-center mt-4 text-xs text-muted-foreground">
+          <Lock className="w-3 h-3 text-primary" />
+          <span>End-to-end encrypted · Share the same passphrase to read messages</span>
+        </div>
       </motion.div>
     </div>
   );
@@ -135,7 +157,8 @@ function getColor(username: string) {
 
 export default function Chatroom() {
   const [username, setUsername] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [passphrase, setPassphrase] = useState<string>("");
+  const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -153,27 +176,43 @@ export default function Chatroom() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Decrypt a batch of messages
+  const decryptMessages = useCallback(async (msgs: ChatMessage[], pass: string): Promise<DecryptedMessage[]> => {
+    return Promise.all(
+      msgs.map(async (m) => {
+        if (m.is_ai) return { ...m, decryptedContent: m.content };
+        const decrypted = await decryptMessage(m.content, pass);
+        return { ...m, decryptedContent: decrypted };
+      })
+    );
+  }, []);
+
   // Fetch messages & subscribe to realtime
   useEffect(() => {
-    if (!username) return;
+    if (!username || !passphrase) return;
 
-    // Fetch existing messages
     supabase
       .from("chat_messages")
       .select("*")
       .order("created_at", { ascending: true })
-      .then(({ data }) => {
-        if (data) setMessages(data);
+      .then(async ({ data }) => {
+        if (data) {
+          const decrypted = await decryptMessages(data, passphrase);
+          setMessages(decrypted);
+        }
       });
 
-    // Realtime subscription
     const channel = supabase
       .channel("chatroom")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "chat_messages" },
-        (payload) => {
-          setMessages((prev) => [...prev, payload.new as ChatMessage]);
+        async (payload) => {
+          const msg = payload.new as ChatMessage;
+          const decrypted = msg.is_ai
+            ? msg.content
+            : await decryptMessage(msg.content, passphrase);
+          setMessages((prev) => [...prev, { ...msg, decryptedContent: decrypted }]);
         }
       )
       .on(
@@ -183,12 +222,25 @@ export default function Chatroom() {
           setMessages((prev) => prev.filter((m) => m.id !== (payload.old as any).id));
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chat_messages" },
+        async (payload) => {
+          const msg = payload.new as ChatMessage;
+          const decrypted = msg.is_ai
+            ? msg.content
+            : await decryptMessage(msg.content, passphrase);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msg.id ? { ...msg, decryptedContent: decrypted } : m))
+          );
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [username]);
+  }, [username, passphrase, decryptMessages]);
 
   // Heartbeat & online count
   useEffect(() => {
@@ -211,7 +263,6 @@ export default function Chatroom() {
 
     return () => {
       clearInterval(heartbeatRef.current);
-      // Release username on leave
       supabase.from("active_usernames").delete().eq("username", username);
     };
   }, [username]);
@@ -231,10 +282,12 @@ export default function Chatroom() {
     setSending(true);
     setInput("");
 
-    // Insert user message
+    // Encrypt message before sending
+    const encrypted = await encryptMessage(trimmed, passphrase);
+
     await supabase.from("chat_messages").insert({
       username,
-      content: trimmed,
+      content: encrypted,
       is_ai: false,
     });
 
@@ -243,7 +296,7 @@ export default function Chatroom() {
     if (suhuMatch) {
       const prompt = suhuMatch[1];
 
-      // Insert placeholder AI message
+      // AI messages are NOT encrypted (they're from the bot)
       const { data: aiMsg } = await supabase
         .from("chat_messages")
         .insert({
@@ -261,15 +314,13 @@ export default function Chatroom() {
             messages: [{ role: "user", content: prompt }],
             onDelta: (chunk) => {
               fullResponse += chunk;
-              // Update in realtime via local state (realtime will also fire)
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === aiMsg.id ? { ...m, content: fullResponse } : m
+                  m.id === aiMsg.id ? { ...m, content: fullResponse, decryptedContent: fullResponse } : m
                 )
               );
             },
             onDone: async () => {
-              // Persist final response
               await supabase
                 .from("chat_messages")
                 .update({ content: fullResponse })
@@ -300,10 +351,16 @@ export default function Chatroom() {
       await supabase.from("active_usernames").delete().eq("username", username);
     }
     setUsername(null);
+    setPassphrase("");
     setMessages([]);
   };
 
-  if (!username) return <UsernameGate onJoin={setUsername} />;
+  const handleJoin = (name: string, pass: string) => {
+    setUsername(name);
+    setPassphrase(pass);
+  };
+
+  if (!username) return <UsernameGate onJoin={handleJoin} />;
 
   return (
     <div className="flex flex-col h-dvh bg-background">
@@ -322,17 +379,23 @@ export default function Chatroom() {
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" /> msgs expire in 10m
               </span>
+              <span className="flex items-center gap-1 text-primary">
+                <Lock className="w-3 h-3" /> E2E
+              </span>
             </div>
           </div>
         </div>
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleLeave}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs font-medium hover:bg-destructive/10 hover:text-destructive transition-colors"
-        >
-          <LogOut className="w-3 h-3" />
-          Leave
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={handleLeave}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs font-medium hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="w-3 h-3" />
+            Leave
+          </motion.button>
+        </div>
       </header>
 
       {/* Messages */}
@@ -352,6 +415,9 @@ export default function Chatroom() {
             <p className="text-xs text-muted-foreground">
               Type <span className="font-mono text-primary">@suhu</span> + your question to ask the AI
             </p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Lock className="w-3 h-3 text-primary" /> Messages are end-to-end encrypted
+            </p>
           </motion.div>
         ) : (
           <div className="max-w-2xl mx-auto space-y-1">
@@ -359,6 +425,7 @@ export default function Chatroom() {
               {messages.map((msg) => {
                 const isMe = msg.username === username;
                 const isAI = msg.is_ai;
+                const displayContent = msg.decryptedContent ?? msg.content;
 
                 return (
                   <motion.div
@@ -370,11 +437,11 @@ export default function Chatroom() {
                     className={`flex ${isMe ? "justify-end" : "justify-start"} mb-1`}
                   >
                     <div className={`max-w-[80%] ${isMe ? "items-end" : "items-start"} flex flex-col`}>
-                      {/* Username label */}
                       <span className={`text-[11px] font-medium mb-0.5 px-1 ${
                         isAI ? "text-primary" : isMe ? "text-muted-foreground" : getColor(msg.username)
                       }`}>
                         {isAI && <Sparkles className="w-3 h-3 inline mr-0.5 -mt-0.5" />}
+                        {!isAI && <Lock className="w-2.5 h-2.5 inline mr-0.5 -mt-0.5 text-primary/50" />}
                         {msg.username}
                         <span className="text-muted-foreground/50 ml-1.5 font-normal">
                           {getTimeAgo(msg.created_at)}
@@ -390,10 +457,10 @@ export default function Chatroom() {
                       }`}>
                         {isAI ? (
                           <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-pre:bg-muted prose-pre:rounded-xl">
-                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            <ReactMarkdown>{displayContent}</ReactMarkdown>
                           </div>
                         ) : (
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <p className="whitespace-pre-wrap">{displayContent}</p>
                         )}
                       </div>
                     </div>
@@ -408,6 +475,7 @@ export default function Chatroom() {
       {/* Input */}
       <div className="px-4 pb-4 pt-2">
         <div className="glass rounded-2xl shadow-elevated flex items-end gap-2 p-2 max-w-2xl mx-auto">
+          <EmojiPicker onSelect={(emoji) => setInput((v) => v + emoji)} />
           <textarea
             ref={textareaRef}
             value={input}
