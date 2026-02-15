@@ -24,7 +24,7 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
   const handleJoin = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (trimmed.toLowerCase() === "suhu") {
+    if (["suhu", "shuvangi"].includes(trimmed.toLowerCase())) {
       setError("This username is reserved for the Queen 🌸");
       setTimeout(() => setError(""), 10000);
       return;
