@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { MessageCircle, Send, Users, Clock, Sparkles, LogOut } from "lucide-react";
+import { MessageCircle, Send, Users, Clock, Sparkles, LogOut, Smile } from "lucide-react";
+import ThemeToggle from "@/components/ThemeToggle";
+import EmojiPicker from "@/components/EmojiPicker";
 import { supabase } from "@/integrations/supabase/client";
 import { streamChat } from "@/lib/streamChat";
 import ReactMarkdown from "react-markdown";
@@ -325,14 +327,17 @@ export default function Chatroom() {
             </div>
           </div>
         </div>
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleLeave}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs font-medium hover:bg-destructive/10 hover:text-destructive transition-colors"
-        >
-          <LogOut className="w-3 h-3" />
-          Leave
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={handleLeave}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs font-medium hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="w-3 h-3" />
+            Leave
+          </motion.button>
+        </div>
       </header>
 
       {/* Messages */}
@@ -408,6 +413,7 @@ export default function Chatroom() {
       {/* Input */}
       <div className="px-4 pb-4 pt-2">
         <div className="glass rounded-2xl shadow-elevated flex items-end gap-2 p-2 max-w-2xl mx-auto">
+          <EmojiPicker onSelect={(emoji) => setInput((v) => v + emoji)} />
           <textarea
             ref={textareaRef}
             value={input}
