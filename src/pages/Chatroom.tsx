@@ -25,7 +25,8 @@ function UsernameGate({ onJoin }: { onJoin: (name: string) => void }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (trimmed.toLowerCase() === "suhu") {
-      setError("'Suhu' is reserved for the AI!");
+      setError("This username is reserved for the Queen 🌸");
+      setTimeout(() => setError(""), 10000);
       return;
     }
     if (trimmed.length < 2 || trimmed.length > 20) {
